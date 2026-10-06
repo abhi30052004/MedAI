@@ -1,20 +1,24 @@
-import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { FileText, Loader2, User, BrainCircuit, MessageSquare, Check, X, Edit2, Play, Upload } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useLocation, useParams } from 'react-router-dom';
+import { FileText, Loader2, User, BrainCircuit, MessageSquare, Check, X, Edit2, Upload, CircleCheck } from 'lucide-react';
 import api from '../services/api';
 import { useAuthStore } from '../store/authStore';
 
 export default function CaseDetail() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
   const { user } = useAuthStore();
   const [loading, setLoading] = useState(true);
   
   const [caseData, setCaseData] = useState<any>(null);
+  const [patient, setPatient] = useState<any>(null);
   const [documents, setDocuments] = useState<any[]>([]);
   const [analysis, setAnalysis] = useState<any>(null);
   const [extractedItems, setExtractedItems] = useState<any[]>([]);
   const [notes, setNotes] = useState<any[]>([]);
   const [newNote, setNewNote] = useState('');
+  const [uploadError, setUploadError] = useState('');
+  const [uploading, setUploading] = useState(false);
   
   // UI States
   const [editingItem, setEditingItem] = useState<number | null>(null);
@@ -31,6 +35,8 @@ export default function CaseDetail() {
       setCaseData(caseRes.data);
       setDocuments(docsRes.data);
       setNotes(notesRes.data);
+      const patientRes = await api.get(`/patients/${caseRes.data.patient_id}`);
+      setPatient(patientRes.data);
 
       if (caseRes.data.status === 'UNDER_REVIEW' || caseRes.data.status === 'COMPLETED') {
         try {
@@ -38,7 +44,7 @@ export default function CaseDetail() {
             api.get(`/cases/${id}/analysis`),
             api.get(`/cases/${id}/extracted-items`)
           ]);
-          setAnalysis(analysisRes.data);
+          setAnalysis(analysisRes.data.latest_summary);
           setExtractedItems(itemsRes.data);
         } catch (e) {
           console.error("No analysis yet or error fetching", e);
@@ -86,22 +92,14 @@ export default function CaseDetail() {
     }
   };
 
-  const handleApprove = async (roleType: 'doctor' | 'insurance') => {
+  const handleReview = async (decision: 'APPROVED' | 'REJECTED') => {
     try {
-      const field = roleType === 'doctor' ? 'doctor_review_status' : 'insurance_review_status';
-      await api.patch(`/cases/${id}`, { [field]: 'APPROVED' });
+      const reason = decision === 'REJECTED' ? window.prompt('Please provide a reason for rejection:') : undefined;
+      if (decision === 'REJECTED' && !reason?.trim()) return;
+      await api.post(`/cases/${id}/review`, { decision, reason });
       loadCaseData();
     } catch (e) {
-      alert("Failed to approve");
-    }
-  };
-  
-  const handleComplete = async () => {
-    try {
-      await api.patch(`/cases/${id}`, { status: 'COMPLETED' });
-      loadCaseData();
-    } catch (e) {
-      alert("Failed to complete case");
+      alert("Failed to save review decision");
     }
   };
 
@@ -111,8 +109,18 @@ export default function CaseDetail() {
 
   if (!caseData) return <div>Case not found</div>;
 
+  const maskedPolicy = caseData.insurance_number
+    ? `••••${caseData.insurance_number.slice(-4)}`
+    : null;
+
   return (
     <div className="space-y-6 pb-12">
+      {location.state?.created && (
+        <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
+          <CircleCheck className="mt-0.5 h-5 w-5 flex-none text-emerald-600" />
+          <div><p className="font-semibold">Case created successfully.</p><p className="text-sm text-emerald-700">Upload medical documents to start AI processing.</p></div>
+        </div>
+      )}
       {/* HEADER */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
         <div className="flex justify-between items-start">
@@ -129,12 +137,12 @@ export default function CaseDetail() {
               </span>
             </div>
             <p className="text-sm text-gray-500 mt-2 flex items-center gap-4">
-              <span className="flex items-center gap-1"><User className="w-4 h-4" /> Patient ID: {caseData.patient_id}</span>
+              <span className="flex items-center gap-1"><User className="w-4 h-4" /> {patient ? `${patient.first_name} ${patient.last_name}` : `Patient ${caseData.patient_id}`}</span>
               <span>Assigned: {caseData.assigned_to || 'Unassigned'}</span>
             </p>
           </div>
           <div className="flex gap-2">
-             {(user?.role === 'doctor' || user?.role === 'admin') && caseData.status === 'DOCUMENTS_UPLOADED' && (
+             {user?.role === 'doctor' && caseData.status === 'DOCUMENTS_UPLOADED' && (
               <button onClick={handleAnalyze} className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
                 <BrainCircuit className="w-4 h-4" /> Run AI Analysis
               </button>
@@ -158,12 +166,27 @@ export default function CaseDetail() {
                 AI Generated — Requires Human Review
               </div>
               <div className="space-y-4 text-sm text-gray-700">
-                <p>{analysis.summary_json.case_summary}</p>
-                {analysis.summary_json.missing_or_important_info?.length > 0 && (
+                <div><h3 className="mb-1 font-semibold text-gray-900">Overall case summary</h3><p>{analysis.summary_json.patient_summary || 'No summary was generated.'}</p></div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {[
+                    ['Clinical findings', 'clinical_findings'],
+                    ['Diagnoses / conditions', 'diagnoses'],
+                    ['Procedures', 'procedures'],
+                    ['Medications', 'medications'],
+                    ['Symptoms', 'symptoms'],
+                    ['Important observations', 'important_observations'],
+                  ].map(([label, key]) => analysis.summary_json[key]?.length > 0 && (
+                    <div key={key} className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+                      <h3 className="mb-2 font-semibold text-gray-900">{label}</h3>
+                      <ul className="list-disc space-y-1 pl-4">{analysis.summary_json[key].map((value: string, index: number) => <li key={index}>{value}</li>)}</ul>
+                    </div>
+                  ))}
+                </div>
+                {analysis.summary_json.missing_information?.length > 0 && (
                   <div className="mt-4 p-4 bg-orange-50 rounded-lg border border-orange-100">
                     <h3 className="font-semibold text-orange-800 mb-2">Missing/Important Information</h3>
                     <ul className="list-disc pl-5 space-y-1 text-orange-900">
-                      {analysis.summary_json.missing_or_important_info.map((info: string, i: number) => <li key={i}>{info}</li>)}
+                      {analysis.summary_json.missing_information.map((info: string, i: number) => <li key={i}>{info}</li>)}
                     </ul>
                   </div>
                 )}
@@ -196,9 +219,9 @@ export default function CaseDetail() {
                           <p className="text-xs text-gray-500 mt-1 line-through">AI: {item.original_value}</p>
                         )}
                         <p className="text-xs text-gray-500 mt-2">
-                          Source: Doc {item.document_id} | Page {item.source_page} | Confidence: {(item.confidence * 100).toFixed(0)}%
+                          Source: Doc {item.document_id} | Page {item.source_page || '—'} | Confidence: {item.confidence == null ? '—' : `${(item.confidence * 100).toFixed(0)}%`}
                         </p>
-                        <p className="text-xs italic text-gray-600 mt-1 bg-white p-2 rounded border border-gray-100">"{item.source_snippet}"</p>
+                        {item.source_snippet && <p className="text-xs italic text-gray-600 mt-1 bg-white p-2 rounded border border-gray-100">“{item.source_snippet}”</p>}
                       </div>
 
                       <div className="text-right flex flex-col items-end gap-2">
@@ -206,7 +229,7 @@ export default function CaseDetail() {
                           {item.review_status}
                         </span>
                         
-                        {item.review_status === 'PENDING' && (user?.role === 'doctor' || user?.role === 'insurance_reviewer' || user?.role === 'admin') && (
+                        {item.review_status === 'PENDING' && (user?.role === 'doctor' || user?.role === 'insurance_reviewer') && (
                           <div className="flex items-center gap-1 mt-2">
                             <button onClick={() => handleReviewItem(item.id, 'confirm')} className="p-1.5 bg-green-100 text-green-700 rounded hover:bg-green-200" title="Confirm"><Check className="w-4 h-4" /></button>
                             <button onClick={() => { setEditingItem(item.id); setEditValue(item.value); }} className="p-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200" title="Edit"><Edit2 className="w-4 h-4" /></button>
@@ -253,31 +276,51 @@ export default function CaseDetail() {
 
         {/* RIGHT AREA */}
         <div className="space-y-6">
+          <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+            <h2 className="mb-4 text-lg font-bold text-gray-900">Case overview</h2>
+            <dl className="space-y-4 text-sm">
+              <div><dt className="text-xs font-semibold uppercase tracking-wide text-gray-400">Patient</dt><dd className="mt-1 font-medium text-gray-900">{patient ? `${patient.first_name} ${patient.last_name}` : '—'}</dd><dd className="text-gray-500">DOB {patient?.dob || '—'}</dd></div>
+              <div><dt className="text-xs font-semibold uppercase tracking-wide text-gray-400">Case</dt><dd className="mt-1 font-medium text-gray-900">{caseData.title}</dd></div>
+              <div><dt className="text-xs font-semibold uppercase tracking-wide text-gray-400">Insurance</dt><dd className="mt-1 font-medium text-gray-900">{caseData.insurance_available ? caseData.insurance_provider : 'Not available'}</dd>{maskedPolicy && <dd className="text-gray-500">Policy {maskedPolicy}</dd>}</div>
+              <div><dt className="text-xs font-semibold uppercase tracking-wide text-gray-400">Status</dt><dd className="mt-1 font-semibold text-blue-700">{caseData.status.replaceAll('_', ' ')}</dd></div>
+            </dl>
+          </div>
           
           {/* SOURCE DOCUMENTS */}
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
             <h2 className="text-lg font-bold text-gray-900 mb-4 flex justify-between items-center">
               Documents
-              <label className="text-xs bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-blue-100 cursor-pointer">
-                <Upload className="w-3 h-3" /> Upload
-                <input type="file" className="hidden" onChange={async (e) => {
+              <label className={`text-xs bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-blue-100 ${uploading ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
+                {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="w-3 h-3" />} {uploading ? 'Uploading' : 'Upload'}
+                <input type="file" accept=".pdf,.jpg,.jpeg,.png,.tiff,.docx" disabled={uploading} className="hidden" onChange={async (e) => {
                   if (!e.target.files || !e.target.files[0]) return;
                   const file = e.target.files[0];
+                  setUploadError('');
+                  if (file.size > 25 * 1024 * 1024) {
+                    setUploadError('File exceeds the 25 MB limit.');
+                    e.target.value = '';
+                    return;
+                  }
                   const formData = new FormData();
                   formData.append('file', file);
                   try {
+                    setUploading(true);
                     await api.post(`/cases/${id}/documents`, formData, {
                       headers: { 'Content-Type': 'multipart/form-data' }
                     });
                     loadCaseData();
-                  } catch (err) {
-                    alert('Upload failed');
+                  } catch (err: any) {
+                    setUploadError(err.response?.data?.detail || 'Upload failed. Please try again.');
+                  } finally {
+                    setUploading(false);
+                    e.target.value = '';
                   }
                 }} />
               </label>
             </h2>
+            {uploadError && <p className="mb-3 rounded-lg bg-red-50 p-2 text-xs text-red-700">{uploadError}</p>}
             <div className="space-y-3">
-              {documents.length === 0 ? <p className="text-sm text-gray-500">No documents uploaded.</p> : documents.map(doc => (
+              {documents.length === 0 ? <div className="rounded-lg border border-dashed border-gray-300 p-4 text-center"><p className="text-sm font-medium text-gray-700">No documents uploaded</p><p className="mt-1 text-xs text-gray-500">PDF, JPG, PNG, TIFF or DOCX · up to 25 MB</p></div> : documents.map(doc => (
                 <div key={doc.id} className="p-3 border border-gray-100 rounded-lg flex justify-between items-center bg-gray-50 hover:bg-gray-100 cursor-pointer">
                   <div className="flex items-center gap-3 overflow-hidden">
                     <FileText className="w-5 h-5 text-gray-400 flex-shrink-0" />
@@ -303,8 +346,8 @@ export default function CaseDetail() {
                     {caseData.doctor_review_status}
                   </p>
                 </div>
-                {caseData.doctor_review_status === 'PENDING' && (user?.role === 'doctor' || user?.role === 'admin') && (
-                  <button onClick={() => handleApprove('doctor')} className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700">Approve</button>
+                {caseData.doctor_review_status === 'PENDING' && user?.role === 'doctor' && caseData.status === 'UNDER_REVIEW' && (
+                  <div className="flex gap-1"><button onClick={() => handleReview('REJECTED')} className="px-2 py-1.5 bg-red-50 text-red-700 text-xs font-medium rounded hover:bg-red-100">Reject</button><button onClick={() => handleReview('APPROVED')} className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700">Approve</button></div>
                 )}
               </div>
 
@@ -315,16 +358,11 @@ export default function CaseDetail() {
                     {caseData.insurance_review_status}
                   </p>
                 </div>
-                {caseData.insurance_review_status === 'PENDING' && (user?.role === 'insurance_reviewer' || user?.role === 'admin') && (
-                  <button onClick={() => handleApprove('insurance')} className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700">Approve</button>
+                {caseData.insurance_review_status === 'PENDING' && user?.role === 'insurance_reviewer' && caseData.status === 'UNDER_REVIEW' && (
+                  <div className="flex gap-1"><button onClick={() => handleReview('REJECTED')} className="px-2 py-1.5 bg-red-50 text-red-700 text-xs font-medium rounded hover:bg-red-100">Reject</button><button onClick={() => handleReview('APPROVED')} className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700">Approve</button></div>
                 )}
               </div>
-
-              {caseData.status !== 'COMPLETED' && caseData.doctor_review_status === 'APPROVED' && caseData.insurance_review_status === 'APPROVED' && (
-                 <button onClick={handleComplete} className="w-full mt-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
-                   Mark Case Completed
-                 </button>
-              )}
+              <p className="text-xs leading-relaxed text-gray-500">The case completes automatically after every required review is approved.</p>
             </div>
           </div>
 

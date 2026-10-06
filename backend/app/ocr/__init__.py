@@ -7,9 +7,30 @@ OCR and PDF text extraction pipeline.
 """
 import abc
 import io
+import os
+import shutil
 from typing import List, Optional, Tuple
 
 from app.core.config import settings
+
+
+def _resolve_tesseract_command() -> str:
+    """Resolve an explicit setting, PATH entry, or common Windows install."""
+    configured = settings.TESSERACT_CMD
+    if os.path.isabs(configured) and os.path.isfile(configured):
+        return configured
+    path_match = shutil.which(configured)
+    if path_match:
+        return path_match
+    if os.name == "nt":
+        candidates = [
+            os.path.join(os.getenv("LOCALAPPDATA", ""), "Programs", "Tesseract-OCR", "tesseract.exe"),
+            os.path.join(os.getenv("ProgramFiles", ""), "Tesseract-OCR", "tesseract.exe"),
+        ]
+        for candidate in candidates:
+            if os.path.isfile(candidate):
+                return candidate
+    return configured
 
 
 class OCRProvider(abc.ABC):
@@ -29,19 +50,19 @@ class TesseractProvider(OCRProvider):
             import pytesseract
             from PIL import Image
 
-            pytesseract.pytesseract.tesseract_cmd = settings.TESSERACT_CMD
+            pytesseract.pytesseract.tesseract_cmd = _resolve_tesseract_command()
             img = Image.open(io.BytesIO(image_bytes))
             text = pytesseract.image_to_string(img)
             return text.strip()
         except Exception as e:
-            return f"[OCR Error: {e}]"
+            raise RuntimeError("OCR failed while processing the image") from e
 
 
-class MockOCRProvider(OCRProvider):
-    """Fallback when Tesseract is not installed."""
+class UnavailableOCRProvider(OCRProvider):
+    """Fail explicitly when the required OCR runtime is unavailable."""
 
     def ocr_image(self, image_bytes: bytes) -> str:
-        return "[OCR not available — Tesseract not installed]"
+        raise RuntimeError("OCR is unavailable because the Tesseract runtime is not installed")
 
 
 def _get_ocr_provider() -> OCRProvider:
@@ -49,11 +70,11 @@ def _get_ocr_provider() -> OCRProvider:
     try:
         import pytesseract
         # Quick check that tesseract binary exists
-        pytesseract.pytesseract.tesseract_cmd = settings.TESSERACT_CMD
+        pytesseract.pytesseract.tesseract_cmd = _resolve_tesseract_command()
         pytesseract.get_tesseract_version()
         return TesseractProvider()
     except Exception:
-        return MockOCRProvider()
+        return UnavailableOCRProvider()
 
 
 ocr_provider: OCRProvider = _get_ocr_provider()
@@ -104,6 +125,21 @@ def extract_text_from_image(image_bytes: bytes) -> Tuple[List[str], str]:
     return [text], text
 
 
+def extract_text_from_docx(docx_bytes: bytes) -> Tuple[List[str], str]:
+    """Extract paragraphs and table cells from a DOCX document."""
+    from docx import Document as DocxDocument
+
+    document = DocxDocument(io.BytesIO(docx_bytes))
+    blocks = [paragraph.text.strip() for paragraph in document.paragraphs if paragraph.text.strip()]
+    for table in document.tables:
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+            if cells:
+                blocks.append(" | ".join(cells))
+    text = "\n".join(blocks)
+    return [text], text
+
+
 def extract_text(file_bytes: bytes, mime_type: str) -> Tuple[List[str], str]:
     """
     Unified extraction entry point.
@@ -113,6 +149,8 @@ def extract_text(file_bytes: bytes, mime_type: str) -> Tuple[List[str], str]:
         return extract_text_from_pdf(file_bytes)
     elif mime_type.startswith("image/"):
         return extract_text_from_image(file_bytes)
+    elif mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        return extract_text_from_docx(file_bytes)
     else:
         # For other types (DOCX etc.), return empty — extend later
         return [], ""

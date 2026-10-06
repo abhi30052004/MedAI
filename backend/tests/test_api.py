@@ -15,8 +15,9 @@ from app.models.patient import Patient
 from app.models.case import Case
 from app.models.document import Document
 from app.models.extracted_item import ExtractedItem
+from app.models.audit_log import AuditLog
 from app.services.ai import ai_service
-from app.ocr import extract_text_from_pdf, extract_text_from_image
+from app.ocr import extract_text_from_pdf, extract_text_from_image, extract_text_from_docx, ocr_provider
 
 from sqlalchemy.pool import StaticPool
 
@@ -79,6 +80,13 @@ def setup_db():
         is_active=True, email_verified=True
     )
     db.add(rev_a)
+
+    staff_a = User(
+        org_id=org_a.id, name="Staff A", email="staff_a@test.com",
+        password_hash=get_password_hash("test1234"), role="staff",
+        is_active=True, email_verified=True
+    )
+    db.add(staff_a)
 
     # Admin User B
     admin_b = User(
@@ -208,6 +216,164 @@ def test_document_upload_validation(setup_db):
     assert "File type not supported" in res.json()["detail"]
 
 
+def test_successful_document_upload_advances_case(setup_db, monkeypatch):
+    import importlib
+    documents_api = importlib.import_module("app.api.documents")
+    monkeypatch.setattr(documents_api.storage_service, "save", lambda content, filename: f"tests/{filename}")
+    monkeypatch.setattr(documents_api, "enqueue_job", lambda **kwargs: None)
+
+    token = get_token("staff_a@test.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    patient = client.post(
+        "/api/v1/patients/",
+        json={"first_name": "Upload", "last_name": "Patient", "dob": "1991-01-01"},
+        headers=headers,
+    ).json()
+    case = client.post(
+        "/api/v1/cases/",
+        json={"patient_id": patient["id"], "title": "Upload Test"},
+        headers=headers,
+    ).json()
+    response = client.post(
+        f"/api/v1/cases/{case['id']}/documents",
+        files={"file": ("record.pdf", io.BytesIO(b"%PDF-1.4 synthetic"), "application/pdf")},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "UPLOADED"
+    refreshed = client.get(f"/api/v1/cases/{case['id']}", headers=headers)
+    assert refreshed.json()["status"] == "DOCUMENTS_UPLOADED"
+
+
+def test_new_case_workflow_new_and_existing_patient(setup_db):
+    token = get_token("staff_a@test.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    users = client.get("/api/v1/users/?role=doctor&is_active=true", headers=headers)
+    assert users.status_code == 200
+    assert users.json() and all(user["role"] == "doctor" for user in users.json())
+    doctor_id = users.json()[0]["id"]
+
+    no_insurance = client.post(
+        "/api/v1/cases/",
+        json={
+            "patient": {
+                "first_name": "John", "last_name": "Doe", "dob": "1990-01-01",
+                "gender": "male", "identifiers": {"mrn": "MRN-JOHN-1"}
+            },
+            "title": "General Consultation",
+            "diagnoses": {"primary_condition": "Other"},
+            "symptoms": {"reason_for_visit": "Headache"},
+            "insurance_available": False,
+            "assigned_to": doctor_id,
+            "additional_notes": "Patient referred for evaluation."
+        },
+        headers=headers,
+    )
+    assert no_insurance.status_code == 200, no_insurance.text
+    first_case = no_insurance.json()
+    assert first_case["status"] == "NEW"
+    assert first_case["insurance_available"] is False
+    assert first_case["insurance_provider"] is None
+    patient_id = first_case["patient_id"]
+
+    before = TestingSessionLocal().query(Patient).count()
+    existing = client.post(
+        "/api/v1/cases/",
+        json={"patient_id": patient_id, "title": "Follow-up", "insurance_available": False},
+        headers=headers,
+    )
+    assert existing.status_code == 200, existing.text
+    db = TestingSessionLocal()
+    assert db.query(Patient).count() == before
+    assert db.query(AuditLog).filter(AuditLog.action == "CASE_CREATED", AuditLog.entity_id == str(first_case["id"])).one()
+    db.close()
+
+
+def test_new_case_insurance_and_duplicate_protection(setup_db):
+    token = get_token("staff_a@test.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    reviewers = client.get("/api/v1/users/?role=insurance_reviewer&is_active=true", headers=headers)
+    reviewer_id = reviewers.json()[0]["id"]
+
+    payload = {
+        "patient": {"first_name": "Jane", "last_name": "Smith", "dob": "1985-06-10"},
+        "title": "Hypertension Follow-up",
+        "insurance_available": True,
+        "insurance_provider": "Example Provider",
+        "insurance_number": "POL123456",
+        "assigned_insurance_reviewer": reviewer_id,
+    }
+    created = client.post("/api/v1/cases/", json=payload, headers=headers)
+    assert created.status_code == 200, created.text
+    assert created.json()["insurance_provider"] == "Example Provider"
+    assert created.json()["assigned_insurance_reviewer"] == reviewer_id
+
+    db = TestingSessionLocal()
+    patient_count = db.query(Patient).filter(Patient.first_name == "Jane", Patient.last_name == "Smith").count()
+    case_count = db.query(Case).filter(Case.title == "Hypertension Follow-up").count()
+    db.close()
+
+    duplicate = client.post("/api/v1/cases/", json=payload, headers=headers)
+    assert duplicate.status_code == 409
+    db = TestingSessionLocal()
+    assert db.query(Patient).filter(Patient.first_name == "Jane", Patient.last_name == "Smith").count() == patient_count
+    assert db.query(Case).filter(Case.title == "Hypertension Follow-up").count() == case_count
+    db.close()
+
+
+def test_staff_cannot_review_and_required_reviews_complete_case(setup_db):
+    staff_token = get_token("staff_a@test.com")
+    doctor_token = get_token("doc_a@test.com")
+    reviewer_token = get_token("rev_a@test.com")
+    db = TestingSessionLocal()
+    doctor = db.query(User).filter(User.email == "doc_a@test.com").one()
+    reviewer = db.query(User).filter(User.email == "rev_a@test.com").one()
+    db.close()
+
+    created = client.post(
+        "/api/v1/cases/",
+        json={
+            "patient": {"first_name": "Review", "last_name": "Patient", "dob": "1975-02-03"},
+            "title": "Review workflow",
+            "insurance_available": True,
+            "insurance_provider": "Example Provider",
+            "insurance_number": "REVIEW-123",
+            "assigned_to": doctor.id,
+            "assigned_insurance_reviewer": reviewer.id,
+        },
+        headers={"Authorization": f"Bearer {staff_token}"},
+    )
+    case_id = created.json()["id"]
+    db = TestingSessionLocal()
+    case = db.query(Case).filter(Case.id == case_id).one()
+    case.status = "UNDER_REVIEW"
+    db.commit()
+    db.close()
+
+    forbidden = client.post(
+        f"/api/v1/cases/{case_id}/review",
+        json={"decision": "APPROVED"},
+        headers={"Authorization": f"Bearer {staff_token}"},
+    )
+    assert forbidden.status_code == 403
+
+    doctor_approved = client.post(
+        f"/api/v1/cases/{case_id}/review",
+        json={"decision": "APPROVED"},
+        headers={"Authorization": f"Bearer {doctor_token}"},
+    )
+    assert doctor_approved.status_code == 200
+    assert doctor_approved.json()["status"] == "UNDER_REVIEW"
+
+    reviewer_approved = client.post(
+        f"/api/v1/cases/{case_id}/review",
+        json={"decision": "APPROVED"},
+        headers={"Authorization": f"Bearer {reviewer_token}"},
+    )
+    assert reviewer_approved.status_code == 200
+    assert reviewer_approved.json()["status"] == "COMPLETED"
+
 def test_llm_mock(setup_db):
     # Test our mock AI service fallback
     old_provider = ai_service.provider
@@ -218,6 +384,44 @@ def test_llm_mock(setup_db):
         assert "Mock summary" in result.patient_summary
     finally:
         ai_service.provider = old_provider
+
+
+def test_pdf_and_docx_text_extraction():
+    import fitz
+    from docx import Document as DocxDocument
+
+    pdf = fitz.open()
+    page = pdf.new_page()
+    expected_pdf_text = "Synthetic clinical document with enough plain text for direct PDF extraction."
+    page.insert_text((72, 72), expected_pdf_text)
+    pages, full_text = extract_text_from_pdf(pdf.tobytes())
+    pdf.close()
+    assert len(pages) == 1
+    assert "Synthetic clinical document" in full_text
+
+    docx = DocxDocument()
+    docx.add_paragraph("Synthetic DOCX medical document")
+    buffer = io.BytesIO()
+    docx.save(buffer)
+    pages, full_text = extract_text_from_docx(buffer.getvalue())
+    assert pages == ["Synthetic DOCX medical document"]
+    assert full_text == "Synthetic DOCX medical document"
+
+
+def test_scanned_image_ocr_when_runtime_available():
+    if type(ocr_provider).__name__ == "UnavailableOCRProvider":
+        pytest.skip("Tesseract runtime is not installed")
+    from PIL import Image, ImageDraw, ImageFont
+
+    image = Image.new("RGB", (1200, 260), "white")
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", 72)
+    draw.text((40, 70), "MEDICAL OCR TEST 12345", font=font, fill="black")
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    _, text = extract_text_from_image(buffer.getvalue())
+    assert "MEDICAL OCR TEST" in text.upper()
+    assert "12345" in text
 
 
 def test_review_confirm_edit_reject(setup_db):

@@ -11,11 +11,13 @@ from app.models.document import Document
 from app.models.case import Case
 from app.models.extracted_item import ExtractedItem
 from app.models.case_summary import CaseSummary
+from app.models.user import User
 from app.storage import storage_service
 from app.ocr import extract_text
 from app.services.ai import ai_service
 from app.core.config import settings
 from app.workers.queue import enqueue_job
+from app.services.audit_service import create_audit_log
 
 
 def process_document(db: Session, payload: Dict[str, Any]) -> None:
@@ -66,7 +68,7 @@ def process_document(db: Session, payload: Dict[str, Any]) -> None:
                         db=db,
                         org_id=case.org_id,
                         job_type="CASE_ANALYSIS",
-                        payload={"case_id": case.id}
+                        payload={"case_id": case.id, "requested_by": payload.get("requested_by")}
                     )
 
     except Exception as e:
@@ -140,6 +142,13 @@ def analyze_case(db: Session, payload: Dict[str, Any]) -> None:
 
         # 5. Advance status
         case.status = "UNDER_REVIEW"
+        requested_by = payload.get("requested_by")
+        audit_user = db.query(User).filter(User.id == requested_by, User.org_id == case.org_id).first() if requested_by else None
+        if audit_user:
+            create_audit_log(
+                db, user=audit_user, action="ANALYSIS_COMPLETED", entity="case",
+                entity_id=case.id, commit=False,
+            )
         db.commit()
 
     except Exception as e:

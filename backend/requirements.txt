@@ -11,3 +11,7 @@ python-multipart
 openai
 groq
 email-validator
+PyMuPDF
+Pillow
+pytesseract
+python-docx

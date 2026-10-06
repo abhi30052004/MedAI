@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -6,6 +6,7 @@ from app.api import deps
 from app.models.user import User
 from app.models.patient import Patient
 from app.schemas.patient import PatientResponse, PatientCreate, PatientUpdate
+from sqlalchemy import or_, func, String
 
 router = APIRouter()
 
@@ -14,9 +15,19 @@ def read_patients(
     db: Session = Depends(get_db),
     current_user: User = Depends(deps.get_current_user),
     skip: int = 0,
-    limit: int = 100
+    limit: int = 100,
+    q: Optional[str] = None
 ):
-    patients = db.query(Patient).filter(Patient.org_id == current_user.org_id).offset(skip).limit(limit).all()
+    query = db.query(Patient).filter(Patient.org_id == current_user.org_id)
+    if q and q.strip():
+        term = f"%{q.strip().lower()}%"
+        query = query.filter(or_(
+            func.lower(Patient.first_name + " " + Patient.last_name).like(term),
+            func.lower(Patient.first_name).like(term),
+            func.lower(Patient.last_name).like(term),
+            Patient.identifiers.cast(String).ilike(term),
+        ))
+    patients = query.offset(skip).limit(limit).all()
     return patients
 
 @router.post("/", response_model=PatientResponse)
@@ -25,6 +36,17 @@ def create_patient(
     db: Session = Depends(get_db),
     current_user: User = Depends(deps.require_roles("admin", "doctor", "staff"))
 ):
+    possible_duplicate = db.query(Patient).filter(
+        Patient.org_id == current_user.org_id,
+        func.lower(Patient.first_name) == patient_in.first_name.strip().lower(),
+        func.lower(Patient.last_name) == patient_in.last_name.strip().lower(),
+        Patient.dob == patient_in.dob,
+    ).first()
+    if possible_duplicate:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "A similar patient already exists.", "patient_id": possible_duplicate.id},
+        )
     db_patient = Patient(
         first_name=patient_in.first_name,
         last_name=patient_in.last_name,

@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -15,10 +15,22 @@ router = APIRouter()
 def read_users(
     skip: int = 0,
     limit: int = 100,
+    role: Optional[str] = None,
+    is_active: Optional[bool] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(deps.require_roles("admin"))
+    current_user: User = Depends(deps.require_roles("admin", "doctor", "staff"))
 ):
-    users = db.query(User).filter(User.org_id == current_user.org_id).offset(skip).limit(limit).all()
+    query = db.query(User).filter(User.org_id == current_user.org_id)
+    # Non-admin users may only discover active assignable clinicians/reviewers.
+    if current_user.role != "admin":
+        if role not in ("doctor", "insurance_reviewer"):
+            raise HTTPException(status_code=403, detail="Only assignment users may be listed")
+        query = query.filter(User.is_active == True)
+    if role:
+        query = query.filter(User.role == role)
+    if is_active is not None:
+        query = query.filter(User.is_active == is_active)
+    users = query.offset(skip).limit(limit).all()
     return users
 
 @router.post("/", response_model=UserResponse)

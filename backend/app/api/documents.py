@@ -14,6 +14,7 @@ from app.schemas.document import DocumentResponse, DocumentStatusResponse
 from app.storage import storage_service
 from app.workers.queue import enqueue_job
 from app.services.audit_service import create_audit_log
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -53,6 +54,8 @@ def upload_document(
     # Read and save file
     file_bytes = file.file.read()
     size = len(file_bytes)
+    if size > settings.MAX_UPLOAD_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"File exceeds the {settings.MAX_UPLOAD_MB} MB limit")
     
     # Very basic validation
     ext = os.path.splitext(file.filename)[1].lower()
@@ -74,6 +77,8 @@ def upload_document(
         uploaded_by=current_user.id
     )
     db.add(doc)
+    if case.status == "NEW":
+        case.status = "DOCUMENTS_UPLOADED"
     db.commit()
     db.refresh(doc)
     
@@ -82,7 +87,7 @@ def upload_document(
         db=db,
         org_id=current_user.org_id,
         job_type="DOCUMENT_PROCESSING",
-        payload={"document_id": doc.id}
+        payload={"document_id": doc.id, "requested_by": current_user.id}
     )
     
     create_audit_log(db, user=current_user, action="DOCUMENT_UPLOADED", entity="document", entity_id=doc.id, request=request)

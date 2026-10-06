@@ -1,13 +1,12 @@
-import React, { useEffect, useState } from 'react';
-import { UserPlus, Shield, Loader2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import type { FormEvent } from 'react';
+import { UserPlus, Loader2 } from 'lucide-react';
 import api from '../services/api';
-import { useAuthStore } from '../store/authStore';
 
 export default function Team() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const { user } = useAuthStore();
   
   // Form state
   const [name, setName] = useState('');
@@ -31,7 +30,7 @@ export default function Team() {
     loadUsers();
   }, []);
 
-  const handleCreateUser = async (e: React.FormEvent) => {
+  const handleCreateUser = async (e: FormEvent) => {
     e.preventDefault();
     try {
       await api.post('/users/', {

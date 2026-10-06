@@ -19,6 +19,7 @@ def create_audit_log(
     entity_id: str,
     request: Optional[Request] = None,
     metadata: Optional[Dict[str, Any]] = None,
+    commit: bool = True,
 ) -> AuditLog:
     """
     Record an auditable event. Call from service layer or route handlers.
@@ -40,6 +41,9 @@ def create_audit_log(
         metadata_=metadata,
     )
     db.add(log)
-    db.commit()
-    db.refresh(log)
+    if commit:
+        db.commit()
+        db.refresh(log)
+    else:
+        db.flush()
     return log

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FileText, Plus, Search, Loader2 } from 'lucide-react';
 import api from '../services/api';
@@ -36,10 +36,10 @@ export default function Cases() {
           <p className="text-gray-500 text-sm mt-1">Manage and review medical cases</p>
         </div>
         {(user?.role === 'staff' || user?.role === 'admin' || user?.role === 'doctor') && (
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+          <Link to="/cases/new" className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
             <Plus className="w-4 h-4" />
             New Case
-          </button>
+          </Link>
         )}
       </div>
 
