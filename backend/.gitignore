@@ -48,8 +48,8 @@ MANIFEST
 *.db
 
 # Temporary uploads / storage
-uploads/
-storage/
+/uploads/
+/storage/
 
 # OS / Editor
 .DS_Store
