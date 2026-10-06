@@ -6,6 +6,7 @@ import { useAuthStore } from '../store/authStore';
 export default function Dashboard() {
   const { user } = useAuthStore();
   const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({
     patients: 0,
     cases: 0,
     recentCases: [] as any[],
@@ -71,7 +72,6 @@ export default function Dashboard() {
               <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center">
                 <kpi.icon className="w-5 h-5 text-blue-600" />
               </div>
-            </div>
             </div>
           </div>
         ))}

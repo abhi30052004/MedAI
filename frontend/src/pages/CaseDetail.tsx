@@ -9,7 +9,7 @@ export default function CaseDetail() {
   const location = useLocation();
   const { user } = useAuthStore();
   const [loading, setLoading] = useState(true);
-  
+
   const [caseData, setCaseData] = useState<any>(null);
   const [patient, setPatient] = useState<any>(null);
   const [documents, setDocuments] = useState<any[]>([]);
@@ -19,7 +19,7 @@ export default function CaseDetail() {
   const [newNote, setNewNote] = useState('');
   const [uploadError, setUploadError] = useState('');
   const [uploading, setUploading] = useState(false);
-  
+
   // UI States
   const [editingItem, setEditingItem] = useState<number | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -130,9 +130,9 @@ export default function CaseDetail() {
               <span className={`px-3 py-1 rounded-full text-xs font-semibold
                 ${caseData.status === 'NEW' ? 'bg-gray-100 text-gray-800' :
                   caseData.status === 'DOCUMENTS_UPLOADED' ? 'bg-blue-100 text-blue-800' :
-                  caseData.status === 'UNDER_ANALYSIS' ? 'bg-yellow-100 text-yellow-800' :
-                  caseData.status === 'UNDER_REVIEW' ? 'bg-purple-100 text-purple-800' :
-                  'bg-green-100 text-green-800'}`}>
+                    caseData.status === 'UNDER_ANALYSIS' ? 'bg-yellow-100 text-yellow-800' :
+                      caseData.status === 'UNDER_REVIEW' ? 'bg-purple-100 text-purple-800' :
+                        'bg-green-100 text-green-800'}`}>
                 {caseData.status.replace('_', ' ')}
               </span>
             </div>
@@ -142,7 +142,7 @@ export default function CaseDetail() {
             </p>
           </div>
           <div className="flex gap-2">
-             {user?.role === 'doctor' && caseData.status === 'DOCUMENTS_UPLOADED' && (
+            {user?.role === 'doctor' && caseData.status === 'DOCUMENTS_UPLOADED' && (
               <button onClick={handleAnalyze} className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
                 <BrainCircuit className="w-4 h-4" /> Run AI Analysis
               </button>
@@ -154,12 +154,12 @@ export default function CaseDetail() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* LEFT / MAIN AREA */}
         <div className="lg:col-span-2 space-y-6">
-          
+
           {/* AI SUMMARY */}
           {analysis && analysis.summary_json && (
             <div className="bg-white p-6 rounded-xl shadow-sm border border-purple-100">
               <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <BrainCircuit className="w-5 h-5 text-purple-600" /> 
+                <BrainCircuit className="w-5 h-5 text-purple-600" />
                 AI Case Summary
               </h2>
               <div className="bg-purple-50 text-purple-800 text-xs px-3 py-1 rounded-md mb-4 inline-block font-medium">
@@ -204,7 +204,7 @@ export default function CaseDetail() {
                     <div className="flex justify-between items-start">
                       <div>
                         <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{item.category}</span>
-                        
+
                         {editingItem === item.id ? (
                           <div className="mt-2 flex gap-2">
                             <input type="text" value={editValue} onChange={e => setEditValue(e.target.value)} className="border rounded px-2 py-1 text-sm" />
@@ -214,7 +214,7 @@ export default function CaseDetail() {
                         ) : (
                           <h4 className="font-medium text-gray-900 mt-1">{item.value}</h4>
                         )}
-                        
+
                         {item.original_value && item.original_value !== item.value && (
                           <p className="text-xs text-gray-500 mt-1 line-through">AI: {item.original_value}</p>
                         )}
@@ -228,7 +228,7 @@ export default function CaseDetail() {
                         <span className={`text-xs font-semibold px-2 py-1 rounded-full ${item.review_status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-800'}`}>
                           {item.review_status}
                         </span>
-                        
+
                         {item.review_status === 'PENDING' && (user?.role === 'doctor' || user?.role === 'insurance_reviewer') && (
                           <div className="flex items-center gap-1 mt-2">
                             <button onClick={() => handleReviewItem(item.id, 'confirm')} className="p-1.5 bg-green-100 text-green-700 rounded hover:bg-green-200" title="Confirm"><Check className="w-4 h-4" /></button>
@@ -258,9 +258,9 @@ export default function CaseDetail() {
                 </div>
               ))}
             </div>
-            
+
             <div className="flex flex-col gap-2">
-              <textarea 
+              <textarea
                 value={newNote}
                 onChange={e => setNewNote(e.target.value)}
                 placeholder="Add a clinical or review note..."
@@ -285,7 +285,7 @@ export default function CaseDetail() {
               <div><dt className="text-xs font-semibold uppercase tracking-wide text-gray-400">Status</dt><dd className="mt-1 font-semibold text-blue-700">{caseData.status.replaceAll('_', ' ')}</dd></div>
             </dl>
           </div>
-          
+
           {/* SOURCE DOCUMENTS */}
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
             <h2 className="text-lg font-bold text-gray-900 mb-4 flex justify-between items-center">
@@ -337,7 +337,7 @@ export default function CaseDetail() {
           {/* APPROVALS */}
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
             <h2 className="text-lg font-bold text-gray-900 mb-4">Case Approvals</h2>
-            
+
             <div className="space-y-4">
               <div className="flex items-center justify-between p-3 border border-gray-100 rounded-lg bg-gray-50">
                 <div>

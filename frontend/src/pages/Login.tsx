@@ -151,6 +151,56 @@ export default function Login() {
               </button>
             </div>
           </form>
+
+          <div className="mt-6">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-300" />
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-2 bg-white text-gray-500">Demo Accounts</span>
+              </div>
+            </div>
+
+            <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => performLogin('admin@medai.com', 'admin123')}
+                disabled={loading}
+                className="w-full flex flex-col items-center justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <span className="font-semibold">Admin</span>
+                <span className="text-xs text-gray-500 font-normal mt-0.5">admin@medai.com / admin123</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => performLogin('doctor@medai.com', 'doctor123')}
+                disabled={loading}
+                className="w-full flex flex-col items-center justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <span className="font-semibold">Doctor</span>
+                <span className="text-xs text-gray-500 font-normal mt-0.5">doctor@medai.com / doctor123</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => performLogin('insurance@medai.com', 'insurance123')}
+                disabled={loading}
+                className="w-full flex flex-col items-center justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <span className="font-semibold">Insurance</span>
+                <span className="text-xs text-gray-500 font-normal mt-0.5">insurance@medai.com / insurance123</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => performLogin('staff@medai.com', 'staff123')}
+                disabled={loading}
+                className="w-full flex flex-col items-center justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <span className="font-semibold">Staff</span>
+                <span className="text-xs text-gray-500 font-normal mt-0.5">staff@medai.com / staff123</span>
+              </button>
+            </div>
+          </div>
         </div>
 
       </div>

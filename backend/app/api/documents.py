@@ -1,11 +1,11 @@
 import os
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request, status, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 import io
 
-from app.core.database import get_db
+from app.core.database import get_db, SessionLocal
 from app.api import deps
 from app.models.user import User
 from app.models.case import Case
@@ -13,7 +13,15 @@ from app.models.document import Document
 from app.schemas.document import DocumentResponse, DocumentStatusResponse
 from app.storage import storage_service
 from app.workers.queue import enqueue_job
+from app.workers.tasks import process_document
 from app.services.audit_service import create_audit_log
+
+def run_process_document(payload: dict):
+    db = SessionLocal()
+    try:
+        process_document(db, payload)
+    finally:
+        db.close()
 from app.core.config import settings
 
 router = APIRouter()
@@ -43,6 +51,7 @@ def read_case_documents(
 def upload_document(
     case_id: int,
     request: Request,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(deps.require_roles("admin", "doctor", "staff"))
@@ -82,12 +91,10 @@ def upload_document(
     db.commit()
     db.refresh(doc)
     
-    # Enqueue processing job
-    enqueue_job(
-        db=db,
-        org_id=current_user.org_id,
-        job_type="DOCUMENT_PROCESSING",
-        payload={"document_id": doc.id, "requested_by": current_user.id}
+    # Process document in background locally instead of remote DB queue
+    background_tasks.add_task(
+        run_process_document,
+        {"document_id": doc.id, "requested_by": current_user.id}
     )
     
     create_audit_log(db, user=current_user, action="DOCUMENT_UPLOADED", entity="document", entity_id=doc.id, request=request)
@@ -143,6 +150,7 @@ def download_document_file(
 @router.post("/documents/{doc_id}/retry")
 def retry_document_processing(
     doc_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(deps.require_roles("admin", "doctor", "staff"))
 ):
@@ -154,10 +162,8 @@ def retry_document_processing(
     doc.error = None
     db.commit()
     
-    enqueue_job(
-        db=db,
-        org_id=current_user.org_id,
-        job_type="DOCUMENT_PROCESSING",
-        payload={"document_id": doc.id}
+    background_tasks.add_task(
+        run_process_document,
+        {"document_id": doc.id, "requested_by": current_user.id}
     )
     return {"message": "Document processing retried"}
