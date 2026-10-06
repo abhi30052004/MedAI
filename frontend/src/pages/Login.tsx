@@ -153,34 +153,6 @@ export default function Login() {
           </form>
         </div>
 
-        <div className="mt-6 bg-blue-50 p-4 rounded-xl border border-blue-100 text-sm text-blue-900 shadow-sm">
-          <h4 className="font-semibold mb-3 flex items-center gap-2">
-            <Activity className="w-4 h-4" /> Demo Accounts
-          </h4>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <button type="button" onClick={() => performLogin('admin@test.com', 'Admin@12345')} className="text-left bg-white p-3 rounded-lg shadow-sm border border-blue-50 hover:border-blue-300 hover:shadow-md transition-all cursor-pointer">
-              <strong className="text-blue-700">Admin</strong><br />
-              <span className="text-gray-600 font-mono text-xs">admin@test.com</span><br />
-              <span className="text-gray-600 font-mono text-xs">Admin@12345</span>
-            </button>
-            <button type="button" onClick={() => performLogin('doctor@test.com', 'Doctor@12345')} className="text-left bg-white p-3 rounded-lg shadow-sm border border-blue-50 hover:border-blue-300 hover:shadow-md transition-all cursor-pointer">
-              <strong className="text-blue-700">Doctor</strong><br />
-              <span className="text-gray-600 font-mono text-xs">doctor@test.com</span><br />
-              <span className="text-gray-600 font-mono text-xs">Doctor@12345</span>
-            </button>
-            <button type="button" onClick={() => performLogin('reviewer@test.com', 'Reviewer@12345')} className="text-left bg-white p-3 rounded-lg shadow-sm border border-blue-50 hover:border-blue-300 hover:shadow-md transition-all cursor-pointer">
-              <strong className="text-blue-700">Insurance Reviewer</strong><br />
-              <span className="text-gray-600 font-mono text-xs">reviewer@test.com</span><br />
-              <span className="text-gray-600 font-mono text-xs">Reviewer@12345</span>
-            </button>
-            <button type="button" onClick={() => performLogin('staff@test.com', 'Staff@12345')} className="text-left bg-white p-3 rounded-lg shadow-sm border border-blue-50 hover:border-blue-300 hover:shadow-md transition-all cursor-pointer">
-              <strong className="text-blue-700">Clinical Staff</strong><br />
-              <span className="text-gray-600 font-mono text-xs">staff@test.com</span><br />
-              <span className="text-gray-600 font-mono text-xs">Staff@12345</span>
-            </button>
-          </div>
-        </div>
-
       </div>
     </div>
   );

@@ -1,26 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Users, FileText, BrainCircuit, CheckCircle2, ArrowUpRight, ArrowDownRight, Loader2, Database } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Users, FileText, BrainCircuit, CheckCircle2, Loader2 } from 'lucide-react';
 import api from '../services/api';
 import { useAuthStore } from '../store/authStore';
-
-const chartData = [
-  { name: 'Mon', cases: 4 },
-  { name: 'Tue', cases: 7 },
-  { name: 'Wed', cases: 5 },
-  { name: 'Thu', cases: 10 },
-  { name: 'Fri', cases: 8 },
-  { name: 'Sat', cases: 2 },
-  { name: 'Sun', cases: 3 },
-];
 
 export default function Dashboard() {
   const { user } = useAuthStore();
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({
     patients: 0,
     cases: 0,
-    recentCases: [] as any[]
+    recentCases: [] as any[],
+    pendingAi: 0,
+    completed: 0
   });
 
   const loadDashboardData = async () => {
@@ -34,7 +24,9 @@ export default function Dashboard() {
       setStats({
         patients: patientsRes.data.length,
         cases: casesRes.data.length,
-        recentCases: casesRes.data.slice(-5).reverse() // Get latest 5
+        recentCases: casesRes.data.slice(-5).reverse(),
+        pendingAi: casesRes.data.filter((c: any) => c.status === 'UNDER_ANALYSIS').length,
+        completed: casesRes.data.filter((c: any) => c.status === 'COMPLETED').length,
       });
     } catch (error) {
       console.error('Failed to load dashboard data', error);
@@ -47,46 +39,11 @@ export default function Dashboard() {
     loadDashboardData();
   }, []);
 
-  const handleSeedData = async () => {
-    if (!window.confirm("This will create a sample patient and case. Continue?")) return;
-
-    try {
-      // 1. Create Patient
-      const patientRes = await api.post('/patients/', {
-        first_name: "Jane",
-        last_name: "Doe",
-        date_of_birth: "1985-05-15",
-        gender: "Female",
-        contact_information: "jane.doe@example.com",
-        medical_history: "Hypertension",
-        allergies: "Penicillin",
-        current_medications: "Lisinopril 10mg",
-        organization_id: user?.organization_id
-      });
-
-      // 2. Create Case
-      await api.post('/cases/', {
-        title: "Annual Checkup and Chest Pain",
-        patient_id: patientRes.data.id,
-        status: "NEW",
-        symptoms: {
-          "description": "Mild chest discomfort, fatigue"
-        }
-      });
-
-      alert("Demo data created successfully!");
-      loadDashboardData();
-    } catch (error) {
-      console.error(error);
-      alert("Failed to seed demo data");
-    }
-  };
-
   const kpis = [
-    { label: 'Total Patients', value: stats.patients, icon: Users, change: '+12%', trend: 'up' },
-    { label: 'Active Cases', value: stats.cases, icon: FileText, change: '+5%', trend: 'up' },
-    { label: 'Pending AI Reviews', value: '0', icon: BrainCircuit, change: '-2%', trend: 'down' },
-    { label: 'Completed Cases', value: '0', icon: CheckCircle2, change: '+18%', trend: 'up' },
+    { label: 'Total Patients', value: stats.patients, icon: Users },
+    { label: 'Total Cases', value: stats.cases, icon: FileText },
+    { label: 'Pending AI Reviews', value: stats.pendingAi, icon: BrainCircuit },
+    { label: 'Completed Cases', value: stats.completed, icon: CheckCircle2 },
   ];
 
   if (loading) {
@@ -100,15 +57,6 @@ export default function Dashboard() {
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Dashboard</h1>
           <p className="text-gray-500 mt-1">Welcome back, {user?.name}. Here's what's happening today.</p>
         </div>
-        {user?.role === 'admin' && (
-          <button
-            onClick={handleSeedData}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            <Database className="w-4 h-4" />
-            Seed Demo Data
-          </button>
-        )}
       </div>
 
       {/* KPIs */}
@@ -124,41 +72,12 @@ export default function Dashboard() {
                 <kpi.icon className="w-5 h-5 text-blue-600" />
               </div>
             </div>
-            <div className="mt-4 flex items-center text-sm">
-              {kpi.trend === 'up' ? (
-                <ArrowUpRight className="w-4 h-4 text-green-500 mr-1" />
-              ) : (
-                <ArrowDownRight className="w-4 h-4 text-red-500 mr-1" />
-              )}
-              <span className={kpi.trend === 'up' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
-                {kpi.change}
-              </span>
-              <span className="text-gray-400 ml-1">vs last month</span>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Chart */}
-        <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm lg:col-span-2">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Cases by Day</h3>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} />
-                <Tooltip
-                  cursor={{ fill: '#F3F4F6' }}
-                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                />
-                <Bar dataKey="cases" fill="#2563eb" radius={[4, 4, 0, 0]} barSize={32} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Cases */}
         <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
           <div className="flex items-center justify-between mb-4">
