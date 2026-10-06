@@ -1,0 +1,187 @@
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Activity, Mail, Lock, Loader2 } from 'lucide-react';
+import api from '../services/api';
+import { useAuthStore } from '../store/authStore';
+
+export default function Login() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+  const login = useAuthStore((state) => state.login);
+
+  const performLogin = async (loginEmail: string, loginPass: string) => {
+    setError('');
+    setLoading(true);
+
+    try {
+      const formData = new URLSearchParams();
+      formData.append('username', loginEmail);
+      formData.append('password', loginPass);
+
+      const response = await api.post('/auth/login', formData, {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      });
+
+      const { access_token } = response.data;
+
+      // Fetch user data
+      const userResponse = await api.get('/auth/me', {
+        headers: { Authorization: `Bearer ${access_token}` }
+      });
+
+      login(access_token, userResponse.data);
+      navigate('/');
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to login');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await performLogin(email, password);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="flex justify-center">
+          <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/30">
+            <Activity className="text-white w-8 h-8" />
+          </div>
+        </div>
+        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900 tracking-tight">
+          Welcome to MedAI
+        </h2>
+        <p className="mt-2 text-center text-sm text-gray-600">
+          Sign in to your account
+        </p>
+      </div>
+
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-white py-8 px-4 shadow-xl shadow-gray-200/50 sm:rounded-2xl sm:px-10 border border-gray-100">
+          <form className="space-y-6" onSubmit={handleSubmit}>
+            {error && (
+              <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-md">
+                <div className="flex">
+                  <div className="ml-3">
+                    <p className="text-sm text-red-700">{error}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+                Email address
+              </label>
+              <div className="mt-1 relative rounded-md shadow-sm">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Mail className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-lg py-3 border bg-gray-50"
+                  placeholder="you@example.com"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                Password
+              </label>
+              <div className="mt-1 relative rounded-md shadow-sm">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Lock className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-lg py-3 border bg-gray-50"
+                  placeholder="••••••••"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <input
+                  id="remember-me"
+                  name="remember-me"
+                  type="checkbox"
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
+                  Remember me
+                </label>
+              </div>
+
+              <div className="text-sm">
+                <a href="#" className="font-medium text-blue-600 hover:text-blue-500">
+                  Forgot your password?
+                </a>
+              </div>
+            </div>
+
+            <div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors disabled:opacity-70"
+              >
+                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Sign in'}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <div className="mt-6 bg-blue-50 p-4 rounded-xl border border-blue-100 text-sm text-blue-900 shadow-sm">
+          <h4 className="font-semibold mb-3 flex items-center gap-2">
+            <Activity className="w-4 h-4" /> Demo Accounts
+          </h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <button type="button" onClick={() => performLogin('admin@test.com', 'Admin@12345')} className="text-left bg-white p-3 rounded-lg shadow-sm border border-blue-50 hover:border-blue-300 hover:shadow-md transition-all cursor-pointer">
+              <strong className="text-blue-700">Admin</strong><br />
+              <span className="text-gray-600 font-mono text-xs">admin@test.com</span><br />
+              <span className="text-gray-600 font-mono text-xs">Admin@12345</span>
+            </button>
+            <button type="button" onClick={() => performLogin('doctor@test.com', 'Doctor@12345')} className="text-left bg-white p-3 rounded-lg shadow-sm border border-blue-50 hover:border-blue-300 hover:shadow-md transition-all cursor-pointer">
+              <strong className="text-blue-700">Doctor</strong><br />
+              <span className="text-gray-600 font-mono text-xs">doctor@test.com</span><br />
+              <span className="text-gray-600 font-mono text-xs">Doctor@12345</span>
+            </button>
+            <button type="button" onClick={() => performLogin('reviewer@test.com', 'Reviewer@12345')} className="text-left bg-white p-3 rounded-lg shadow-sm border border-blue-50 hover:border-blue-300 hover:shadow-md transition-all cursor-pointer">
+              <strong className="text-blue-700">Insurance Reviewer</strong><br />
+              <span className="text-gray-600 font-mono text-xs">reviewer@test.com</span><br />
+              <span className="text-gray-600 font-mono text-xs">Reviewer@12345</span>
+            </button>
+            <button type="button" onClick={() => performLogin('staff@test.com', 'Staff@12345')} className="text-left bg-white p-3 rounded-lg shadow-sm border border-blue-50 hover:border-blue-300 hover:shadow-md transition-all cursor-pointer">
+              <strong className="text-blue-700">Clinical Staff</strong><br />
+              <span className="text-gray-600 font-mono text-xs">staff@test.com</span><br />
+              <span className="text-gray-600 font-mono text-xs">Staff@12345</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
